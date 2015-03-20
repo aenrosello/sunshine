@@ -1,8 +1,11 @@
 package com.example.android.sunshine.app;
 
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
 import android.util.Log;
@@ -12,6 +15,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
@@ -27,7 +31,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Created by alberto on 3/6/15.
@@ -40,6 +43,12 @@ public class ForecastFragment extends Fragment {
     }
 
     @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
@@ -49,11 +58,19 @@ public class ForecastFragment extends Fragment {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            String postalCode = "94043";
-            new FetchWeatherAsync().execute(postalCode);
+            updateWeather();
             return true;
         }
+
         return super.onOptionsItemSelected(item);
+    }
+
+    private void updateWeather() {
+        FetchWeatherAsync fetchWeatherAsync = new FetchWeatherAsync();
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String postalCode = preferences.getString(getString(R.string.pref_location_key),
+                getString(R.string.pref_location_default));
+        fetchWeatherAsync.execute(postalCode);
     }
 
     @Override
@@ -65,15 +82,19 @@ public class ForecastFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-        List<String> forecastEntry = new ArrayList<>();
-        for (int i = 0; i < 15; i++) {
-            forecastEntry.add("forecast entry: " + i);
-        }
         forecastAdapter = new ArrayAdapter<>(getActivity(), R.layout.list_item_forecast,
-                R.id.list_item_forecast_textview, forecastEntry);
+                R.id.list_item_forecast_textview, new ArrayList<String>());
         ListView listView = (ListView) rootView.findViewById(R.id.listview_forecast);
         listView.setAdapter(forecastAdapter);
-
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                String forecast = forecastAdapter.getItem(position);
+                Intent detailIntent = new Intent(getActivity(), DetailActivity.class);
+                detailIntent.putExtra(Intent.EXTRA_TEXT, forecast);
+                startActivity(detailIntent);
+            }
+        });
         return rootView;
     }
 
@@ -97,7 +118,7 @@ public class ForecastFragment extends Fragment {
             String forecastJsonStr = null;
             final String FORECAST_BASE_URL = "http://api.openweathermap.org/data/2.5/forecast/daily?";
             final String POSTAL_CODE = "q";
-            Integer postaCodeValue = Integer.parseInt(params[0]);
+            Integer postalCodeValue = Integer.parseInt(params[0]);
             final String MODE = "mode";
             String modeValue = "json";
             final String UNITS = "units";
@@ -109,7 +130,7 @@ public class ForecastFragment extends Fragment {
                 // Possible parameters are avaiable at OWM's forecast API page, at
                 // http://openweathermap.org/API#forecast
                 Uri.Builder builder = Uri.parse(FORECAST_BASE_URL).buildUpon()
-                        .appendQueryParameter(POSTAL_CODE, postaCodeValue.toString())
+                        .appendQueryParameter(POSTAL_CODE, postalCodeValue.toString())
                         .appendQueryParameter(MODE, modeValue)
                         .appendQueryParameter(UNITS, unitsValue)
                         .appendQueryParameter(CNT, cntValue.toString());
@@ -183,6 +204,14 @@ public class ForecastFragment extends Fragment {
          * Prepare the weather high/lows for presentation.
          */
         private String formatHighLows(double high, double low) {
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String temperatureUnit = preferences.getString(getString(R.string.pref_temperature_key), getString(R.string.pref_temperature_default));
+            if (temperatureUnit.equals(getString(R.string.pref_temperature_imperial))) {
+                high = (high * 1.8) + 32;
+                low = (low * 1.8) + 32;
+            } else if (!temperatureUnit.equals(getString(R.string.pref_temperature_metric))) {
+                Log.d(LOG_TAG, "Unit type not found:" + temperatureUnit);
+            }
             // For presentation, assume the user doesn't care about tenths of a degree.
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
